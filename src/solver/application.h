@@ -13,7 +13,7 @@
 
 namespace Antares::Solver
 {
-class Application : public Yuni::IEventObserver<Application, Yuni::Policy::SingleThreaded>
+class Application final : public Yuni::IEventObserver<Application, Yuni::Policy::SingleThreaded>
 {
 public:
     //! \name Constructor & Destructor
@@ -94,6 +94,7 @@ private:
     Benchmarking::DurationCollector pDurationCollector;
     Benchmarking::OptimizationInfo pOptimizationInfo;
 
+    std::shared_ptr<Yuni::Job::QueueService> ioQueueService;
     IResultWriter::Ptr resultWriter = nullptr;
 
     void prepareWriter(Antares::Data::Study& study,

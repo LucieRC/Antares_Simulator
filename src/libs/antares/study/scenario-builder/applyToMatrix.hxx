@@ -25,7 +25,7 @@ inline bool CheckValidity<Data::DataSeriesHydro>(uint value,
                                                  uint tsGenMax)
 {
     // When the TS-Generators are not used
-    return (!tsGenMax) ? (value < data.count) : (value < tsGenMax);
+    return (!tsGenMax) ? (value < data.TScount()) : (value < tsGenMax);
 }
 
 template<>
@@ -35,8 +35,8 @@ inline bool CheckValidity<Data::AreaLink>(uint value,
 {
     //Value = index of time series
     //Direct Capacities = all time series
-    //directCapacities.width = Number of time series
-    return value < data.directCapacities.width;
+    //directCapacities.timeSeries.width = Number of time series
+    return value < data.directCapacities.timeSeries.width;
 }
 
 template<>

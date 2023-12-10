@@ -46,8 +46,9 @@ extern "C"
 #include "../utils/mps_utils.h"
 #include "../utils/filename.h"
 
-#include "../infeasible-problem-analysis/problem.h"
-#include "../infeasible-problem-analysis/exceptions.h"
+#include "../infeasible-problem-analysis/unfeasible-pb-analyzer.h"
+#include "../infeasible-problem-analysis/variables-bounds-consistency.h"
+#include "../infeasible-problem-analysis/constraint-slack-analysis.h"
 
 #include <chrono>
 
@@ -104,10 +105,9 @@ static SimplexResult OPT_TryToCallSimplex(
         const int optimizationNumber,
         const OptPeriodStringGenerator& optPeriodStringGenerator,
         bool PremierPassage,
-        IResultWriter& writer
-        )
+        IResultWriter& writer)
 {
-    PROBLEME_ANTARES_A_RESOUDRE* ProblemeAResoudre = problemeHebdo->ProblemeAResoudre.get();
+    const auto& ProblemeAResoudre = problemeHebdo->ProblemeAResoudre;
     auto ProbSpx
       = (PROBLEME_SPX*)(ProblemeAResoudre->ProblemesSpx[(int)NumIntervalle]);
     auto solver = (MPSolver*)(ProblemeAResoudre->ProblemesSpx[(int)NumIntervalle]);
@@ -219,12 +219,6 @@ static SimplexResult OPT_TryToCallSimplex(
     Probleme.CoutsMarginauxDesContraintes = ProblemeAResoudre->CoutsMarginauxDesContraintes.data();
     Probleme.CoutsReduits = ProblemeAResoudre->CoutsReduits.data();
 
-#ifndef NDEBUG
-    Probleme.AffichageDesTraces = ( PremierPassage ? OUI_SPX : NON_SPX );
-#else
-    Probleme.AffichageDesTraces = NON_SPX;
-#endif
-
     Probleme.NombreDeContraintesCoupes = 0;
 
     if (options.useOrtools)
@@ -304,12 +298,14 @@ bool OPT_AppelDuSimplexe(const OptimizationOptions& options,
                          const OptPeriodStringGenerator& optPeriodStringGenerator,
                          IResultWriter& writer)
 {
-    PROBLEME_ANTARES_A_RESOUDRE* ProblemeAResoudre = problemeHebdo->ProblemeAResoudre.get();
+    const auto& ProblemeAResoudre = problemeHebdo->ProblemeAResoudre;
     Optimization::PROBLEME_SIMPLEXE_NOMME Probleme(ProblemeAResoudre->NomDesVariables,
                                                    ProblemeAResoudre->NomDesContraintes,
+                                                   ProblemeAResoudre->VariablesEntieres,
                                                    ProblemeAResoudre->StatutDesVariables,
                                                    ProblemeAResoudre->StatutDesContraintes,
-                                                   problemeHebdo->NamedProblems);
+                                                   problemeHebdo->NamedProblems,
+                                                   problemeHebdo->solverLogs);
 
     bool PremierPassage = true;
 
@@ -375,21 +371,12 @@ bool OPT_AppelDuSimplexe(const OptimizationOptions& options,
         }
 
         Probleme.SetUseNamedProblems(true);
-        Optimization::InfeasibleProblemAnalysis analysis(options.solverName, &Probleme);
-        logs.notice() << " Solver: Starting infeasibility analysis...";
-        try
-        {
-            Optimization::InfeasibleProblemReport report = analysis.produceReport();
-            report.prettyPrint();
-        }
-        catch (const Optimization::SlackVariablesEmpty& ex)
-        {
-            logs.error() << ex.what();
-        }
-        catch (const Optimization::ProblemResolutionFailed& ex)
-        {
-            logs.error() << ex.what();
-        }
+
+        auto MPproblem = std::shared_ptr<MPSolver>(ProblemSimplexeNommeConverter(options.solverName, &Probleme).Convert());
+
+        auto analyzer = makeUnfeasiblePbAnalyzer();
+        analyzer->run(MPproblem.get());
+        analyzer->printReport();
 
         auto mps_writer_on_error = simplexResult.mps_writer_factory.createOnOptimizationError();
         const std::string filename = createMPSfilename(optPeriodStringGenerator, optimizationNumber);

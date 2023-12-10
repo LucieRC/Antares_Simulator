@@ -302,7 +302,7 @@ void Parameters::reset()
     power.fluctuations = lssFreeModulations;
     shedding.policy = shpShavePeaks;
 
-    unitCommitment.ucMode = ucHeuristic;
+    unitCommitment.ucMode = ucHeuristicFast;
     nbCores.ncMode = ncAvg;
     renewableGeneration.rgModelling = rgAggregated;
 
@@ -324,6 +324,7 @@ void Parameters::reset()
     include.exportMPS = mpsExportStatus::NO_EXPORT;
     include.exportStructure = false;
     namedProblems = false;
+    solverLogs = false;
 
     include.unfeasibleProblemBehavior = UnfeasibleProblemBehavior::ERROR_MPS;
 
@@ -345,7 +346,7 @@ void Parameters::reset()
     resetSeeds();
 }
 
-bool Parameters::isTSGeneratedByPrepro(const TimeSeries ts) const
+bool Parameters::isTSGeneratedByPrepro(const TimeSeriesType ts) const
 {
     return (timeSeriesToGenerate & ts);
 }
@@ -626,6 +627,11 @@ static bool SGDIntLoadFamily_Optimization(Parameters& d,
     {
         return stringToGlobalTransmissionCapacities(value, d.transmissionCapacities);
     }
+
+    if (key == "solver-logs")
+    {
+        return value.to<bool>(d.solverLogs);
+    }
     return false;
 }
 static bool SGDIntLoadFamily_AdqPatch(Parameters& d,
@@ -730,7 +736,7 @@ static bool SGDIntLoadFamily_OtherPreferences(Parameters& d,
         }
         logs.warning() << "parameters: invalid unit commitment mode. Got '" << value
                        << "'. reset to fast mode";
-        d.unitCommitment.ucMode = ucHeuristic;
+        d.unitCommitment.ucMode = ucHeuristicFast;
         return false;
     }
     // Renewable generation modelling
@@ -1065,6 +1071,7 @@ bool Parameters::loadFromINI(const IniFile& ini, uint version, const StudyLoadOp
     ortoolsSolver = options.ortoolsSolver;
 
     namedProblems = options.namedProblems;
+    solverLogs = options.solverLogs || solverLogs;
 
     // Attempt to fix bad values if any
     fixBadValues();
@@ -1090,7 +1097,7 @@ bool Parameters::loadFromINI(const IniFile& ini, uint version, const StudyLoadOp
 void Parameters::fixRefreshIntervals()
 {
     using T = std::
-      tuple<uint& /* refreshInterval */, enum TimeSeries /* ts */, const std::string /* label */>;
+      tuple<uint& /* refreshInterval */, enum TimeSeriesType /* ts */, const std::string /* label */>;
     const std::list<T> timeSeriesToCheck = {{refreshIntervalLoad, timeSeriesLoad, "load"},
                                             {refreshIntervalSolar, timeSeriesSolar, "solar"},
                                             {refreshIntervalHydro, timeSeriesHydro, "hydro"},
@@ -1344,18 +1351,13 @@ void Parameters::prepareForSimulation(const StudyLoadOptions& options)
     std::vector<std::string> excluded_vars;
     renewableGeneration.addExcludedVariables(excluded_vars);
     adqPatchParams.addExcludedVariables(excluded_vars);
+    unitCommitment.addExcludedVariables(excluded_vars);
 
     variablesPrintInfo.prepareForSimulation(thematicTrimming, excluded_vars);
 
     switch (mode)
     {
     case stdmEconomy:
-    {
-        // The year-by-year mode might have been requested from the command line
-        if (options.forceYearByYear)
-            yearByYear = true;
-        break;
-    }
     case stdmAdequacy:
     {
         // The year-by-year mode might have been requested from the command line
@@ -1484,6 +1486,9 @@ void Parameters::prepareForSimulation(const StudyLoadOptions& options)
     {
         logs.info() << "  :: The problems will contain named variables and constraints";
     }
+    // indicated whether solver logs will be printed
+    logs.info() << "  :: Printing solver logs : " << (solverLogs ? "True" : "False");
+    
 }
 
 void Parameters::resetPlaylist(uint nbOfYears)
@@ -1599,6 +1604,7 @@ void Parameters::saveToINI(IniFile& ini) const
         // Unfeasible problem behavior
         section->add("include-unfeasible-problem-behavior",
                      Enum::toString(include.unfeasibleProblemBehavior));
+        section->add("solver-logs", solverLogs);
     }
 
     // Adequacy patch
@@ -1797,5 +1803,26 @@ bool Parameters::RenewableGeneration::isAggregated() const
 bool Parameters::RenewableGeneration::isClusters() const
 {
     return rgModelling == Antares::Data::rgClusters;
+}
+
+// Some variables rely on dual values & marginal costs
+void Parameters::UCMode::addExcludedVariables(std::vector<std::string>& out) const
+{
+    // These variables rely on dual values & marginal costs
+    // these don't really make sense for MILP problems
+    // TODO : solve a LP problem with fixed values for integer variables
+    //        extract values for dual variables & marginal costs from LP problem
+    const static std::vector<std::string> milpExclude = {{"MARG. COST"},
+                                                         {"BC. MARG. COST"},
+                                                         {"CONG. FEE (ALG.)"},
+                                                         {"CONG. FEE (ABS.)"},
+                                                         {"MRG. PRICE"},
+                                                         {"STS Cashflow By Cluster"},
+                                                         {"Profit by plant"}};
+
+    if (ucMode == ucMILP)
+    {
+        out.insert(out.end(), milpExclude.begin(), milpExclude.end());
+    }
 }
 } // namespace Antares::Data

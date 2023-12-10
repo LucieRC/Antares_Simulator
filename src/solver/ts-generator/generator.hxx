@@ -27,7 +27,6 @@
 #ifndef __ANTARES_SOLVER_timeSeries_GENERATOR_HXX__
 #define __ANTARES_SOLVER_timeSeries_GENERATOR_HXX__
 
-#include "../aleatoire/alea_fonctions.h"
 #include <antares/logs/logs.h>
 
 namespace Antares
@@ -49,7 +48,7 @@ inline bool GenerateTimeSeries<Data::timeSeriesHydro>(Data::Study& study,
 }
 
 // --- TS Generators using XCast ---
-template<enum Data::TimeSeries T>
+template<enum Data::TimeSeriesType T>
 bool GenerateTimeSeries(Data::Study& study, uint year, IResultWriter& writer)
 {
     auto* xcast = reinterpret_cast<XCast::XCast*>(
@@ -91,7 +90,7 @@ bool GenerateTimeSeries(Data::Study& study, uint year, IResultWriter& writer)
     return r;
 }
 
-template<enum Data::TimeSeries T>
+template<enum Data::TimeSeriesType T>
 void Destroy(Data::Study& study, uint year)
 {
     auto* xcast = reinterpret_cast<XCast::XCast*>(

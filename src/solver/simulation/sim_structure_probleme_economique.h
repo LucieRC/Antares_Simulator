@@ -173,7 +173,8 @@ struct PROPERTIES
     double injectionNominalCapacity;
     double withdrawalNominalCapacity;
     double efficiency;
-    std::optional<double> initialLevel;
+    double initialLevel;
+    bool initialLevelOptim;
 
     std::shared_ptr<Antares::Data::ShortTermStorage::Series> series;
 
@@ -423,7 +424,6 @@ struct PRODUCTION_THERMIQUE_OPTIMALE
     std::vector<double> NombreDeGroupesQuiSArretentDuPalier;
 
     std::vector<double> NombreDeGroupesQuiTombentEnPanneDuPalier;
-
 };
 
 struct RESULTATS_HORAIRES
@@ -486,6 +486,7 @@ struct PROBLEME_HEBDO
     char TypeDeLissageHydraulique = PAS_DE_LISSAGE_HYDRAULIQUE;
     bool WaterValueAccurate = false;
     bool OptimisationAvecCoutsDeDemarrage = false;
+    bool OptimisationAvecVariablesEntieres = false;
     uint32_t NombreDePays = 0;
     std::vector<const char*> NomsDesPays;
     uint32_t NombreDePaliersThermiques = 0;
@@ -542,6 +543,7 @@ struct PROBLEME_HEBDO
     bool exportMPSOnError = false;
     bool ExportStructure = false;
     bool NamedProblems = false;
+    bool solverLogs = false;
 
     uint32_t HeureDansLAnnee = 0;
     bool LeProblemeADejaEteInstancie = false;

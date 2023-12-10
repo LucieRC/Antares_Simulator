@@ -34,7 +34,6 @@
 #include <antares/exception/InitializationError.hpp>
 #include "../variable/print.h"
 #include <yuni/io/io.h>
-#include "../aleatoire/alea_fonctions.h"
 #include "timeseries-numbers.h"
 #include "apply-scenario.h"
 #include <antares/fatal-error.h>
@@ -45,11 +44,13 @@
 #include <yuni/core/system/suspend.h>
 #include <yuni/job/job.h>
 
+#include "antares/concurrency/concurrency.h"
+
 namespace Antares::Solver::Simulation
 {
 
 template<class Impl>
-class yearJob final : public Yuni::Job::IJob
+class yearJob
 {
 public:
     yearJob(ISimulation<Impl>* simulation,
@@ -77,10 +78,19 @@ public:
      state(pState),
      yearByYear(pYearByYear),
      pDurationCollector(durationCollector),
-     pResultWriter(resultWriter)
+     pResultWriter(resultWriter),
+    hydroManagement(study.areas,
+                    study.parameters,
+                    study.calendar,
+                    study.maxNbYearsInParallel,
+                    resultWriter)
     {
         hydroHotStart = (study.parameters.initialReservoirLevels.iniLevels == Data::irlHotStart);
     }
+
+    yearJob(const yearJob&) = delete;
+    yearJob& operator =(const yearJob&) = delete;
+    ~yearJob() = default;
 
 private:
     ISimulation<Impl>* simulation_;
@@ -97,6 +107,7 @@ private:
     bool hydroHotStart;
     Benchmarking::IDurationCollector& pDurationCollector;
     IResultWriter& pResultWriter;
+    HydroManagement hydroManagement;
 private:
     /*
     ** \brief Log failed week
@@ -133,7 +144,8 @@ private:
         }
     }
 
-    virtual void onExecute() override
+public:
+    void operator()()
     {
         Progression::Task progression(study, y, Solver::Progression::sectYear);
 
@@ -153,22 +165,16 @@ private:
                 randomReservoirLevel = randomForCurrentYear.pReservoirLevels;
 
             // 2 - Preparing the Time-series numbers
-            // We want to draw lots of numbers for time-series
-            ApplyRandomTSnumbers(study, y, numSpace);
+            // removed
 
             // 3 - Preparing data related to Clusters in 'must-run' mode
-            simulation_->prepareClustersInMustRunMode(numSpace);
+            simulation_->prepareClustersInMustRunMode(numSpace, y);
 
             // 4 - Hydraulic ventilation
-            {
-                Benchmarking::Timer timer;
-                simulation_->hydroManagement.makeVentilation(randomReservoirLevel,
-                                                             state[numSpace],
-                                                             y,
-                                                             numSpace);
-                timer.stop();
-                pDurationCollector.addDuration("hydro_ventilation", timer.get_duration());
-            }
+            Benchmarking::Timer timer;
+            hydroManagement.makeVentilation(randomReservoirLevel, state[numSpace], y, numSpace);
+            timer.stop();
+            pDurationCollector.addDuration("hydro_ventilation", timer.get_duration());
 
             // Updating the state
             state[numSpace].year = y;
@@ -188,7 +194,7 @@ private:
                                                randomForCurrentYear,
                                                failedWeekList,
                                                isFirstPerformedYearOfSimulation,
-                                               simulation_->hydroManagement.ventilationResults(),
+                                               hydroManagement.ventilationResults(),
                                                optWriter);
 
             // Log failing weeks
@@ -231,6 +237,7 @@ private:
     } // End of onExecute() method
 };
 
+
 template<class Impl>
 inline ISimulation<Impl>::ISimulation(Data::Study& study,
     const ::Settings& settings,
@@ -242,11 +249,6 @@ inline ISimulation<Impl>::ISimulation(Data::Study& study,
     pNbYearsReallyPerformed(0),
     pNbMaxPerformedYearsInParallel(0),
     pYearByYear(study.parameters.yearByYear),
-    hydroManagement(study.areas, 
-                    study.parameters, 
-                    study.calendar, 
-                    study.maxNbYearsInParallel,
-                    resultWriter),
     pFirstSetParallelWithAPerformedYearWasRun(false),
     pDurationCollector(duration_collector),
     pQueueService(study.pQueueService),
@@ -301,12 +303,9 @@ void ISimulation<Impl>::run()
         ImplementationType::variables.template provideInformations<Variable::PrintInfosStdCout>(c);
     }
 
-    // The general data
-    auto& parameters = *(study.runtime->parameters);
-
     // Preprocessors
     // Determine if we have to use the preprocessors at least one time.
-    pData.initialize(parameters);
+    pData.initialize(study.parameters);
 
     // Prepro only ?
     ImplementationType::preproOnly = settings.tsGeneratorsOnly;
@@ -347,7 +346,7 @@ void ISimulation<Impl>::run()
             throw FatalError("An unrecoverable error has occured. Can not continue.");
         }
 
-        if (parameters.useCustomScenario)
+        if (study.parameters.useCustomScenario)
             ApplyCustomScenario(study);
 
         // Launching the simulation for all years
@@ -416,7 +415,7 @@ void ISimulation<Impl>::writeResults(bool synthesis, uint year, uint numSpace)
     {
         if (synthesis)
         {
-            auto& parameters = *(study.runtime->parameters);
+            const auto& parameters = study.parameters;
             if (not parameters.synthesis) // disabled by parameters
             {
                 logs.info() << "The simulation synthesis is disabled.";
@@ -668,12 +667,14 @@ void ISimulation<Impl>::allocateMemoryForRandomNumbers(randomNumbers& randomForP
 template<class Impl>
 void ISimulation<Impl>::computeRandomNumbers(randomNumbers& randomForYears,
                                              std::vector<uint>& years,
-                                             std::map<unsigned int, bool>& isYearPerformed)
+                                             std::map<unsigned int, bool>& isYearPerformed,
+                                             MersenneTwister& randomHydroGenerator)
 {
     auto& runtime = *study.runtime;
 
     uint indexYear = 0;
     std::vector<unsigned int>::iterator ity;
+
     for (ity = years.begin(); ity != years.end(); ++ity)
     {
         uint y = *ity;
@@ -719,9 +720,10 @@ void ISimulation<Impl>::computeRandomNumbers(randomNumbers& randomForYears,
             // Previous month's first day in the year
             int firstDayOfMonth = study.calendar.months[initResLevelOnSimMonth].daysYear.first;
 
-            double randomLevel = hydroManagement.randomReservoirLevel(min[firstDayOfMonth],
+            double randomLevel = randomReservoirLevel(min[firstDayOfMonth],
                                                                        avg[firstDayOfMonth],
-                                                                       max[firstDayOfMonth]);
+                                                                       max[firstDayOfMonth],
+                                                                       randomHydroGenerator);
 
             // Possibly update the intial level from scenario builder
             if (study.parameters.useCustomScenario)
@@ -903,7 +905,7 @@ void ISimulation<Impl>::computeAnnualCostsStatistics(
     }
 }
 
-static void logPerformedYearsInAset(setOfParallelYears& set)
+static inline void logPerformedYearsInAset(setOfParallelYears& set)
 {
     logs.info() << "parallel batch size : " << set.nbYears << " (" << set.nbPerformedYears
                 << " perfomed)";
@@ -923,6 +925,10 @@ void ISimulation<Impl>::loopThroughYears(uint firstYear,
                                          std::vector<Variable::State>& state)
 {
     assert(endYear <= study.parameters.nbYears);
+
+    // Init random hydro
+    MersenneTwister randomHydroGenerator;
+    randomHydroGenerator.reset(study.parameters.seed[Data::seedHydroManagement]);
 
     // List of parallel years sets
     std::vector<setOfParallelYears> setsOfParallelYears;
@@ -944,13 +950,7 @@ void ISimulation<Impl>::loopThroughYears(uint firstYear,
     allocateMemoryForRandomNumbers(randomForParallelYears);
 
     // Number of threads to perform the jobs waiting in the queue
-    {
-        int numThreads = pNbMaxPerformedYearsInParallel;
-        // If the result writer uses the job queue, add one more thread for it
-        if (pResultWriter.needsTheJobQueue())
-            numThreads++;
-        pQueueService->maximumThreadCount(numThreads);
-    }
+    pQueueService->maximumThreadCount(pNbMaxPerformedYearsInParallel);
 
     // Loop over sets of parallel years
     std::vector<setOfParallelYears>::iterator set_it;
@@ -962,11 +962,13 @@ void ISimulation<Impl>::loopThroughYears(uint firstYear,
         if (set_it->regenerateTS)
             regenerateTimeSeries(set_it->yearForTSgeneration);
 
-        computeRandomNumbers(randomForParallelYears, set_it->yearsIndices, set_it->isYearPerformed);
+        computeRandomNumbers(randomForParallelYears, set_it->yearsIndices, set_it->isYearPerformed,
+                             randomHydroGenerator);
 
         std::vector<unsigned int>::iterator year_it;
 
         bool yearPerformed = false;
+        Concurrency::FutureSet results;
         for (year_it = set_it->yearsIndices.begin(); year_it != set_it->yearsIndices.end();
              ++year_it)
         {
@@ -986,21 +988,20 @@ void ISimulation<Impl>::loopThroughYears(uint firstYear,
             // have to be rerun (meaning : they must be run once). if(!set_it->yearFailed[y])
             // continue;
 
-            pQueueService->add(
-              new yearJob<ImplementationType>(this,
-                                              y,
-                                              set_it->yearFailed,
-                                              set_it->isFirstPerformedYearOfASet,
-                                              pFirstSetParallelWithAPerformedYearWasRun,
-                                              numSpace,
-                                              randomForParallelYears,
-                                              performCalculations,
-                                              study,
-                                              state,
-                                              pYearByYear,
-                                              pDurationCollector,
-                                              pResultWriter));
-
+            auto task = std::make_shared<yearJob<ImplementationType>>(this,
+                                                                 y,
+                                                                 set_it->yearFailed,
+                                                                 set_it->isFirstPerformedYearOfASet,
+                                                                 pFirstSetParallelWithAPerformedYearWasRun,
+                                                                 numSpace,
+                                                                 randomForParallelYears,
+                                                                 performCalculations,
+                                                                 study,
+                                                                 state,
+                                                                 pYearByYear,
+                                                                 pDurationCollector,
+                                                                 pResultWriter);
+            results.add(Concurrency::AddTask(*pQueueService, task));
         } // End loop over years of the current set of parallel years
 
         logPerformedYearsInAset(*set_it);
@@ -1009,6 +1010,8 @@ void ISimulation<Impl>::loopThroughYears(uint firstYear,
 
         pQueueService->wait(Yuni::qseIdle);
         pQueueService->stop();
+        results.join();
+        pResultWriter.flush();
 
         // At this point, the first set of parallel year(s) was run with at least one year performed
         if (!pFirstSetParallelWithAPerformedYearWasRun && yearPerformed)
@@ -1021,7 +1024,7 @@ void ISimulation<Impl>::loopThroughYears(uint firstYear,
             if (failed)
             {
                 std::ostringstream msg;
-                msg << "Year " << year << " has failed in the previous set of parallel year.";
+                msg << "Year " << year + 1 << " has failed in the previous set of parallel year.";
                 throw FatalError(msg.str());
             }
         }

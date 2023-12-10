@@ -121,7 +121,7 @@ bool Economy::year(Progression::Task& progression,
                    yearRandomNumbers& randomForYear,
                    std::list<uint>& failedWeekList,
                    bool isFirstPerformedYearOfSimulation,
-                   const ALL_HYDRO_VENTILATION_RESULTS& hydroVentilationResults,
+                   const HYDRO_VENTILATION_RESULTS& hydroVentilationResults,
                    OptimizationStatisticsWriter& optWriter)
 {
     // No failed week at year start
@@ -143,11 +143,11 @@ bool Economy::year(Progression::Task& progression,
         pProblemesHebdo[numSpace].weekInTheYear = state.weekInTheYear = w;
         pProblemesHebdo[numSpace].HeureDansLAnnee = hourInTheYear;
 
-        ::SIM_RenseignementProblemeHebdo(study, pProblemesHebdo[numSpace], state.weekInTheYear, 
+        ::SIM_RenseignementProblemeHebdo(study, pProblemesHebdo[numSpace], state.weekInTheYear,
                                          numSpace, hourInTheYear, hydroVentilationResults);
 
-        BuildThermalPartOfWeeklyProblem(study, pProblemesHebdo[numSpace], 
-                                        numSpace, hourInTheYear, randomForYear.pThermalNoisesByArea);
+        BuildThermalPartOfWeeklyProblem(study, pProblemesHebdo[numSpace],
+                                        hourInTheYear, randomForYear.pThermalNoisesByArea, state.year);
 
         // Reinit optimisation if needed
         pProblemesHebdo[numSpace].ReinitOptimisation = reinitOptim;
@@ -155,7 +155,7 @@ bool Economy::year(Progression::Task& progression,
 
         try
         {
-            weeklyOptProblems_[numSpace]->solve(w, hourInTheYear);
+            weeklyOptProblems_[numSpace]->solve();
 
             // Runs all the post processes in the list of post-process commands
             optRuntimeData opt_runtime_data(state.year, w, hourInTheYear);
@@ -264,9 +264,9 @@ void Economy::simulationEnd()
     }
 }
 
-void Economy::prepareClustersInMustRunMode(uint numSpace)
+void Economy::prepareClustersInMustRunMode(uint numSpace, uint year)
 {
-    PrepareDataFromClustersInMustrunMode(study, numSpace);
+    PrepareDataFromClustersInMustrunMode(study, numSpace, year);
 }
 
 } // namespace Antares::Solver::Simulation

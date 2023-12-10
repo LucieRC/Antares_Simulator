@@ -357,7 +357,7 @@ public:
     /*!
     ** \brief Destroy all data of the TS generator '@TS'
     */
-    template<enum TimeSeries TS>
+    template<enum TimeSeriesType TS>
     void destroyTSGeneratorData();
 
     //! Destroy all data of the load TS generator
@@ -610,7 +610,7 @@ public:
     ScenarioBuilder::Sets* scenarioRules = nullptr;
     //@}
 
-    Matrix<double> scenarioHydroLevels;
+    TimeSeries::TS scenarioHydroLevels;
 
     /*!
     ** \brief Runtime informations

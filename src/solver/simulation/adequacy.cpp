@@ -95,7 +95,7 @@ bool Adequacy::simulationBegin()
 
 bool Adequacy::simplexIsRequired(uint hourInTheYear, 
                                  uint numSpace,
-                                 const ALL_HYDRO_VENTILATION_RESULTS& hydroVentilationResults) const
+                                 const HYDRO_VENTILATION_RESULTS& hydroVentilationResults) const
 {
     uint areaCount = study.areas.size();
     uint indx = hourInTheYear;
@@ -106,7 +106,7 @@ bool Adequacy::simplexIsRequired(uint hourInTheYear,
 
         for (uint areaIdx = 0; areaIdx != areaCount; ++areaIdx)
         {
-            auto& hydroVentilation = hydroVentilationResults[numSpace][areaIdx];
+            auto& hydroVentilation = hydroVentilationResults[areaIdx];
 
             double quantity
               = pProblemesHebdo[numSpace].ConsommationsAbattues[j].ConsommationAbattueDuPays[areaIdx]
@@ -126,7 +126,7 @@ bool Adequacy::year(Progression::Task& progression,
                     yearRandomNumbers& randomForYear,
                     std::list<uint>& failedWeekList,
                     bool isFirstPerformedYearOfSimulation,
-                    const ALL_HYDRO_VENTILATION_RESULTS& hydroVentilationResults,
+                    const HYDRO_VENTILATION_RESULTS& hydroVentilationResults,
                     OptimizationStatisticsWriter& optWriter)
 {
     // No failed week at year start
@@ -152,7 +152,7 @@ bool Adequacy::year(Progression::Task& progression,
                                          numSpace, hourInTheYear, hydroVentilationResults);
 
         BuildThermalPartOfWeeklyProblem(study, pProblemesHebdo[numSpace],
-                                        numSpace, hourInTheYear, randomForYear.pThermalNoisesByArea);
+                                        hourInTheYear, randomForYear.pThermalNoisesByArea, state.year);
 
         // Reinit optimisation if needed
         pProblemesHebdo[numSpace].ReinitOptimisation = reinitOptim;
@@ -293,7 +293,7 @@ bool Adequacy::year(Progression::Task& progression,
                 {
                     assert(k < state.resSpilled.width);
                     assert(j < state.resSpilled.height);
-                    auto& hydroVentilation = hydroVentilationResults[numSpace][k];
+                    auto& hydroVentilation = hydroVentilationResults[k];
                     auto& hourlyResults = pProblemesHebdo[numSpace].ResultatsHoraires[k];
 
                     hourlyResults.TurbinageHoraire[j]
@@ -386,9 +386,9 @@ void Adequacy::simulationEnd()
     }
 }
 
-void Adequacy::prepareClustersInMustRunMode(uint numSpace)
+void Adequacy::prepareClustersInMustRunMode(uint numSpace, uint year)
 {
-    PrepareDataFromClustersInMustrunMode(study, numSpace);
+    PrepareDataFromClustersInMustrunMode(study, numSpace, year);
 }
 
 } // namespace Antares::Solver::Simulation

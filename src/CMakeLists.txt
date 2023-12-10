@@ -2,12 +2,12 @@ cmake_minimum_required(VERSION 3.14) # FetchContent_MakeAvailable
 
 # Version
 set(ANTARES_VERSION_HI	      8)
-set(ANTARES_VERSION_LO	      7)
+set(ANTARES_VERSION_LO	      8)
 set(ANTARES_VERSION_REVISION  0)
 
 # Beta release
 set(ANTARES_BETA 0)
-set(ANTARES_RC 0)
+set(ANTARES_RC 3)
 
 set(ANTARES_VERSION_YEAR      2023)
 
@@ -285,7 +285,7 @@ find_package(minizip)
 if(NOT minizip_FOUND OR BUILD_MINIZIP)
     # Repository + tag
     set(MZ_REPOSITORY "https://github.com/zlib-ng/minizip-ng.git")
-    set(MZ_TAG "3.0.7")
+    set(MZ_TAG "4.0.1")
     # CMake flags
     set(MZ_LZMA "OFF" CACHE INTERNAL "")
     set(MZ_ZSTD "OFF" CACHE INTERNAL "")
@@ -436,7 +436,7 @@ else()
 	set(CPACK_PACKAGE_VERSION_MINOR ${ANTARES_VERSION_LO})
 	set(CPACK_PACKAGE_VERSION_PATCH ${ANTARES_VERSION_REVISION}${ANTARES_VERSION_TAG})
 
-	set(CPACK_DEBIAN_PACKAGE_DEPENDS "libwxgtk3.0-gtk3-0v5")
+	set(CPACK_DEBIAN_PACKAGE_DEPENDS "libwxgtk3.0-gtk3-0v5 | libwxgtk3.2-dev")
     set(CPACK_RPM_PACKAGE_REQUIRES "wxGTK3")
     set(CPACK_RPM_PACKAGE_AUTOREQPROV "0")
 

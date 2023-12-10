@@ -83,7 +83,7 @@ protected:
               yearRandomNumbers& randomForYear,
               std::list<uint>& failedWeekList,
               bool isFirstPerformedYearOfSimulation,
-              const ALL_HYDRO_VENTILATION_RESULTS&,
+              const HYDRO_VENTILATION_RESULTS&,
               OptimizationStatisticsWriter& optWriter);
 
     void incrementProgression(Progression::Task& progression);
@@ -93,7 +93,7 @@ protected:
     /*!
     ** \brief Prepare clusters in 'must-run' mode
     */
-    void prepareClustersInMustRunMode(uint numSpace);
+    void prepareClustersInMustRunMode(uint numSpace, uint year);
 
     void initializeState(Variable::State& state, uint numSpace);
 
@@ -101,7 +101,6 @@ private:
     uint pNbWeeks;
     uint pStartTime;
     uint pNbMaxPerformedYearsInParallel;
-    bool pPreproOnly;
     std::vector<PROBLEME_HEBDO> pProblemesHebdo;
     std::vector<std::unique_ptr<Antares::Solver::Optimization::WeeklyOptimization>> weeklyOptProblems_;
     std::vector<std::unique_ptr<interfacePostProcessList>> postProcessesList_;
